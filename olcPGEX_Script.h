@@ -12,9 +12,12 @@
 
 	What is this?
 	~~~~~~~~~~~~~
+
 	This extensions implement a lexer, parser and interpreter for
 	a custom designed scripting language to be used inside
 	olcPixelGameEngine games
+
+
 
 	Grammar Definition
 	~~~~~~~~~~~~~~~~~~
@@ -23,8 +26,18 @@
 	term	: factor ((MULTIPLY|DIVIDE) factor)*
 	factor	: NUMBER | LPAREN expr RPAREN
 
+
+
+	Defintion of numbers
+	~~~~~~~~~~~~~~~~~~~~
+
+	Currently there are only integers in the decimal system allowed
+
+
+
 	License (OLC-3)
 	~~~~~~~~~~~~~~~
+
 	Redistribution and use in source and binary forms, with or without
 	modification, are permitted provided that the following conditions
 	are met:
@@ -93,7 +106,7 @@ namespace olc {
 		Script() = default;
 
 	public:
-		void LoadScript(std::string script);
+		bool LoadScript(std::string script);
 	};
 
 	namespace script {
@@ -144,6 +157,9 @@ namespace olc {
 			Error() = default;
 		};
 
+		/**************************/
+		/* Class IllegalCharError */
+		/**************************/
 
 		/***************/
 		/* Class Lexer */
@@ -180,7 +196,7 @@ namespace olc {
 	/****************/
 #pragma region pgex_script_impl_class
 
-	void Script::LoadScript(std::string script) {
+	bool Script::LoadScript(std::string script) {
 		script::Lexer lexer(script);
 
 		std::cout << "Loaded Script: " << script << std::endl;
@@ -199,6 +215,8 @@ namespace olc {
 
 			std::cout << "Current Token: " << token << std::endl;
 		} while (token.GetTokenType() != script::TokenType::TT_EOF);
+
+		return true;
 	}
 
 #pragma endregion
@@ -356,7 +374,7 @@ namespace olc {
 				Advance();
 			}
 
-			return token;
+			return LexerReturn(token);
 		}
 
 #pragma endregion
