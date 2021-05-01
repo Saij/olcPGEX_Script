@@ -115,6 +115,9 @@ namespace olc {
 
 		typedef std::variant<Token, Error> LexerReturn;
 
+		/******************/
+		/* Enum TokenType */
+		/******************/
 		enum class TokenType {
 			TT_PLUS,
 			TT_MINUS,
@@ -160,6 +163,10 @@ namespace olc {
 		/**************************/
 		/* Class IllegalCharError */
 		/**************************/
+		class IllegalCharError : public Error {
+		public:
+			IllegalCharError() = default;
+		};
 
 		/***************/
 		/* Class Lexer */
