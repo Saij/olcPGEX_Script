@@ -106,7 +106,7 @@ namespace olc {
 		Script() = default;
 
 	public:
-		bool LoadScript(std::string script);
+		bool LoadScript(std::string sScript);
 	};
 
 	namespace script {
@@ -134,7 +134,7 @@ namespace olc {
 		/***************/
 		class Token {
 		public:
-			Token(TokenType type, std::string value);
+			Token(TokenType type, std::string sValue);
 			Token(TokenType type);
 			Token();
 
@@ -145,10 +145,10 @@ namespace olc {
 			TokenType GetTokenType();
 			void SetTokenType(TokenType value);
 			std::string GetValue();
-			void SetValue(std::string value);
+			void SetValue(std::string sValue);
 
 		private:
-			TokenType m_eType;
+			TokenType m_type;
 			std::string m_sValue;
 		};
 
@@ -157,7 +157,11 @@ namespace olc {
 		/***************/
 		class Error {
 		public:
-			Error() = default;
+			Error(std::string sErrorName, std::string sErrorDescription);
+
+		private:
+			std::string m_sErrorName;
+			std::string m_sErrorDescription;
 		};
 
 		/**************************/
@@ -165,7 +169,7 @@ namespace olc {
 		/**************************/
 		class IllegalCharError : public Error {
 		public:
-			IllegalCharError() = default;
+			IllegalCharError(std::string sErrorDescription);
 		};
 
 		/***************/
@@ -173,7 +177,7 @@ namespace olc {
 		/***************/
 		class Lexer {
 		public:
-			Lexer(std::string script);
+			Lexer(std::string sScript);
 
 		public:
 			LexerReturn GetNextToken();
@@ -203,10 +207,10 @@ namespace olc {
 	/****************/
 #pragma region pgex_script_impl_class
 
-	bool Script::LoadScript(std::string script) {
-		script::Lexer lexer(script);
+	bool Script::LoadScript(std::string sScript) {
+		script::Lexer lexer(sScript);
 
-		std::cout << "Loaded Script: " << script << std::endl;
+		std::cout << "Loaded Script: " << sScript << std::endl;
 
 		script::Token token;
 
@@ -234,8 +238,8 @@ namespace olc {
 		/***************/
 #pragma region pgex_script_impl_token
 
-		Token::Token(TokenType type, std::string value) :
-			m_eType(type), m_sValue(value)
+		Token::Token(TokenType type, std::string sValue) :
+			m_type(type), m_sValue(sValue)
 		{ }
 
 		Token::Token(TokenType type) :
@@ -248,12 +252,12 @@ namespace olc {
 
 		TokenType Token::GetTokenType()
 		{
-			return m_eType;
+			return m_type;
 		}
 
 		void Token::SetTokenType(TokenType value)
 		{
-			m_eType = value;
+			m_type = value;
 		}
 
 		std::string Token::GetValue()
@@ -261,15 +265,15 @@ namespace olc {
 			return m_sValue;
 		}
 
-		void Token::SetValue(std::string value)
+		void Token::SetValue(std::string sValue)
 		{
-			m_sValue = value;
+			m_sValue = sValue;
 		}
 
 		std::ostream& operator<< (std::ostream& os, const Token& token)
 		{
 			os << "Token(";
-			switch (token.m_eType) {
+			switch (token.m_type) {
 			case TokenType::TT_PLUS:
 				os << "PLUS";
 				break;
@@ -321,8 +325,8 @@ namespace olc {
 		/***************/
 #pragma region pgex_script_impl_lexer
 
-		Lexer::Lexer(std::string script) :
-			m_isScript(script)
+		Lexer::Lexer(std::string sScript) :
+			m_isScript(sScript)
 		{ 
 			Advance();
 		}
@@ -372,9 +376,9 @@ namespace olc {
 					break;
 
 				default:
-					std::string val(1, m_cCurrentChar);
+					std::string sVal(1, m_cCurrentChar);
 					token.SetTokenType(TokenType::TT_NUMBER);
-					token.SetValue(val);
+					token.SetValue(sVal);
 					break;
 				}
 
