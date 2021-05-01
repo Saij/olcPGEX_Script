@@ -31,7 +31,8 @@
 	Defintion of numbers
 	~~~~~~~~~~~~~~~~~~~~
 
-	Currently there are only integers in the decimal system allowed
+	Currently there are only integers in the decimal system allowed.
+	An integer can't start with the digit 0.
 
 
 
@@ -317,6 +318,28 @@ namespace olc {
 			os << ")";
 			return os;
 		}
+
+#pragma endregion
+
+		/***************/
+		/* Class Error */
+		/***************/
+#pragma region pgex_script_impl_error
+
+		Error::Error(std::string sErrorName, std::string sErrorDescription) :
+			m_sErrorName(sErrorName), m_sErrorDescription(sErrorDesciption)
+		{ }
+
+#pragma endregion
+
+		/**************************/
+		/* Class IllegalCharError */
+		/**************************/
+#pragma region pgex_script_impl_illegalcharerror
+
+		IllegalCharError::IllegalCharError(std::string sErrorDescription) :
+			Error("IllegalCharError", sErrorDescription)
+		{ }
 
 #pragma endregion
 
