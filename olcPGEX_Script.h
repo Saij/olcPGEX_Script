@@ -33,6 +33,7 @@
 
 	Currently there are only integers in the decimal system allowed.
 	An integer can't start with the digit 0.
+	Integers are stored in 32-bit signed variables
 
 
 
@@ -92,6 +93,7 @@
 
 #include <sstream>
 #include <variant>
+#include <ctype.h>
 #pragma endregion
 
 // O--------------------------------------------------------------------------O
@@ -133,9 +135,11 @@ namespace olc {
 		/***************/
 		/* Class Token */
 		/***************/
+		typedef std::variant<std::monostate, std::string, int32_t> TokenValue;
+
 		class Token {
 		public:
-			Token(TokenType type, std::string sValue);
+			Token(TokenType type, TokenValue value);
 			Token(TokenType type);
 			Token();
 
@@ -145,12 +149,12 @@ namespace olc {
 		public:
 			TokenType GetTokenType();
 			void SetTokenType(TokenType value);
-			std::string GetValue();
-			void SetValue(std::string sValue);
+			TokenValue GetValue();
+			void SetValue(TokenValue value);
 
 		private:
 			TokenType m_type;
-			std::string m_sValue;
+			TokenValue m_value;
 		};
 
 		/***************/
@@ -159,6 +163,9 @@ namespace olc {
 		class Error {
 		public:
 			Error(std::string sErrorName, std::string sErrorDescription);
+
+		public:
+			friend std::ostream& operator<<(std::ostream& os, const Error& error);
 
 		private:
 			std::string m_sErrorName;
@@ -185,6 +192,7 @@ namespace olc {
 
 		private:
 			void Advance();
+			LexerReturn GenerateNumberToken();
 
 		private:
 			char m_cCurrentChar;
@@ -219,7 +227,8 @@ namespace olc {
 			script::LexerReturn ret = lexer.GetNextToken();
 
 			if (std::holds_alternative<script::Error>(ret)) {
-				std::cout << "Error: " << std::endl;
+				script::Error err = std::get<script::Error>(ret);
+				std::cout << "Error: " << err << std::endl;
 				break;
 			}
 
@@ -239,12 +248,12 @@ namespace olc {
 		/***************/
 #pragma region pgex_script_impl_token
 
-		Token::Token(TokenType type, std::string sValue) :
-			m_type(type), m_sValue(sValue)
+		Token::Token(TokenType type, TokenValue value) :
+			m_type(type), m_value(value)
 		{ }
 
 		Token::Token(TokenType type) :
-			Token(type, "")
+			m_type(type)
 		{ }
 
 		Token::Token() :
@@ -261,14 +270,14 @@ namespace olc {
 			m_type = value;
 		}
 
-		std::string Token::GetValue()
+		TokenValue Token::GetValue()
 		{
-			return m_sValue;
+			return m_value;
 		}
 
-		void Token::SetValue(std::string sValue)
+		void Token::SetValue(TokenValue value)
 		{
-			m_sValue = sValue;
+			m_value = value;
 		}
 
 		std::ostream& operator<< (std::ostream& os, const Token& token)
@@ -311,8 +320,13 @@ namespace olc {
 				os << "UNKNOWN";
 			}
 
-			if (!token.m_sValue.empty()) {
-				os << ", " << token.m_sValue;
+			if (std::holds_alternative<std::string>(token.m_value)) {
+				std::string sValue = std::get<std::string>(token.m_value);
+				os << ", \"" << sValue << "\"";
+			}
+			else if (std::holds_alternative<int32_t>(token.m_value)) {
+				int32_t nValue = std::get<int32_t>(token.m_value);
+				os << ", " << nValue;
 			}
 
 			os << ")";
@@ -327,8 +341,14 @@ namespace olc {
 #pragma region pgex_script_impl_error
 
 		Error::Error(std::string sErrorName, std::string sErrorDescription) :
-			m_sErrorName(sErrorName), m_sErrorDescription(sErrorDesciption)
+			m_sErrorName(sErrorName), m_sErrorDescription(sErrorDescription)
 		{ }
+
+		std::ostream& operator<< (std::ostream& os, const Error& error)
+		{
+			os << error.m_sErrorName << ": " << error.m_sErrorDescription;
+			return os;
+		}
 
 #pragma endregion
 
@@ -365,50 +385,68 @@ namespace olc {
 
 		LexerReturn Lexer::GetNextToken()
 		{
+			static const std::string digits("123456789");
 			Token token;
 
 			while (m_cCurrentChar != '\0' && token.GetTokenType() == TokenType::TT_EOF) {
-				switch (m_cCurrentChar) {
-				case '\t':
-				case ' ':
+				if (m_cCurrentChar == '\t' || m_cCurrentChar == ' ') {
 					// Ignore whitespaces
-					break;
-
-				case '+':
+					Advance();
+					continue;
+				}
+				else if (m_cCurrentChar == '+') {
 					token.SetTokenType(TokenType::TT_PLUS);
-					break;
-
-				case '-':
+				}
+				else if (m_cCurrentChar == '-') {
 					token.SetTokenType(TokenType::TT_MINUS);
-					break;
-
-				case '*':
+				}
+				else if (m_cCurrentChar == '*') {
 					token.SetTokenType(TokenType::TT_MULTIPLY);
-					break;
-
-				case '/':
+				}
+				else if (m_cCurrentChar == '/') {
 					token.SetTokenType(TokenType::TT_DIVIDE);
-					break;
-
-				case '(':
+				}
+				else if (m_cCurrentChar == '(') {
 					token.SetTokenType(TokenType::TT_LPAREN);
-					break;
-
-				case ')':
+				}
+				else if (m_cCurrentChar == ')') {
 					token.SetTokenType(TokenType::TT_RPAREN);
-					break;
-
-				default:
-					std::string sVal(1, m_cCurrentChar);
-					token.SetTokenType(TokenType::TT_NUMBER);
-					token.SetValue(sVal);
-					break;
+				}
+				else if (isdigit(m_cCurrentChar)) {
+					// Handle number tokens
+					return GenerateNumberToken();
+				}
+				else {
+					// Illegal character found!
+					IllegalCharError error("'" + std::string(1, m_cCurrentChar) + "'");
+					return LexerReturn(error);
 				}
 
 				Advance();
 			}
 
 			return LexerReturn(token);
+		}
+
+		LexerReturn Lexer::GenerateNumberToken()
+		{
+			if (m_cCurrentChar == '0') {
+				IllegalCharError error("Leading zeros are not allowed for integer values");
+				return LexerReturn(error);
+			}
+
+			std::string sNumber(1, m_cCurrentChar);
+			Advance();
+
+			while (m_cCurrentChar != '\0' && isdigit(m_cCurrentChar)) {
+				sNumber += std::string(1, m_cCurrentChar);
+				Advance();
+			}
+
+			int32_t nNumberValue = std::stoi(sNumber);
+			Token numberToken(TokenType::TT_NUMBER, nNumberValue);
+
+			return LexerReturn(numberToken);
 		}
 
 #pragma endregion
