@@ -15,6 +15,22 @@ public:
 
 		olc::ScriptEngine script;
 
+		/*
+		std::string helloWorld = 
+			"void helloWorld() {"
+			"	print('Hello World!');"
+			"}";
+
+		std::string helloPeople = 
+			"string helloString(string name) {		"
+			"	return 'Hello ' + name + '!';		"
+			"}										"
+			"										"
+			"void helloPeople(string name) {		"
+			"	print(helloString(name));			"
+			"}										";
+		*/
+
 		example = "5---2";
 		script.LoadScript(example);
 		std::cout << "Expected: 3" << std::endl;
