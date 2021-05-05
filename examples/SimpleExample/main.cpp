@@ -11,31 +11,48 @@ public:
 public:
 	bool OnUserCreate() override
 	{
-		std::string example1 = "5 + 5 - 2";
-		std::string example2 = "2 * 5 + 5";
-		std::string example3 = "2 * (5 + 5)";
-		std::string example4 = "10 / 2 + 5 * 20";
-		std::string example5 = "10a + 4";
-		std::string example6 = "0123 + 123";
+		std::string example;
 
-		olc::Script script;
+		olc::ScriptEngine script;
 
-		script.LoadScript(example1);
+		example = "5---2";
+		script.LoadScript(example);
+		std::cout << "Expected: 3" << std::endl;
 		std::cout << std::endl;
 
-		script.LoadScript(example2);
+		example = "5 + 5 - 2";
+		script.LoadScript(example);
+		std::cout << "Expected: 8" << std::endl;
 		std::cout << std::endl;
 
-		script.LoadScript(example3);
+		example = "2 * 5 + 5";
+		script.LoadScript(example);
+		std::cout << "Expected: 15" << std::endl;
 		std::cout << std::endl;
 
-		script.LoadScript(example4);
+		example = "2 * (5 + 5)";
+		script.LoadScript(example);
+		std::cout << "Expected: 20" << std::endl;
 		std::cout << std::endl;
 
-		script.LoadScript(example5);
+		example = "10 / (5 + 5) * 20";
+		script.LoadScript(example);
+		std::cout << "Expected: 20" << std::endl;
 		std::cout << std::endl;
 
-		script.LoadScript(example6);
+		example = "10 / 5 + 5 * 20";
+		script.LoadScript(example);
+		std::cout << "Expected: 102" << std::endl;
+		std::cout << std::endl;
+
+		example = "10a + 4";
+		script.LoadScript(example);
+		std::cout << "Expected: IllegalCharError" << std::endl;
+		std::cout << std::endl;
+
+		example = "0123 + 123";
+		script.LoadScript(example);
+		std::cout << "Expected: IllegalCharError" << std::endl;
 		std::cout << std::endl;
 
 		return true;

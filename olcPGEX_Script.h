@@ -24,7 +24,7 @@
 
 	expr	: term ((PLUS|MINUS) term)*
 	term	: factor ((MULTIPLY|DIVIDE) factor)*
-	factor	: NUMBER | LPAREN expr RPAREN
+	factor	: (PLUS|MINUS) factor | NUMBER | LPAREN expr RPAREN
 
 
 
@@ -93,7 +93,9 @@
 
 #include <sstream>
 #include <variant>
+#include <optional>
 #include <ctype.h>
+#include <iterator>
 #pragma endregion
 
 // O--------------------------------------------------------------------------O
@@ -104,24 +106,30 @@ namespace olc {
 	/****************/
 	/* Class Script */
 	/****************/
-	class Script : olc::PGEX {
+	class ScriptEngine : olc::PGEX {
 	public: 
-		Script() = default;
+		ScriptEngine() = default;
 
 	public:
 		bool LoadScript(std::string sScript);
 	};
 
 	namespace script {
+		// Forward declarations for typedefs
 		class Token;
 		class Error;
+		class ASTNode;
 
-		typedef std::variant<Token, Error> LexerReturn;
+		using ASTNodeSharedPtr = std::shared_ptr<ASTNode>;
+		using TokenValue = std::variant<std::monostate, int32_t>;
+		using LexerReturn = std::variant<Token, Error>;
+		using ParserReturn = std::variant<ASTNodeSharedPtr, Error>;
 
 		/******************/
 		/* Enum TokenType */
 		/******************/
 		enum class TokenType {
+			TT_NONE,
 			TT_PLUS,
 			TT_MINUS,
 			TT_MULTIPLY,
@@ -135,15 +143,12 @@ namespace olc {
 		/***************/
 		/* Class Token */
 		/***************/
-		typedef std::variant<std::monostate, std::string, int32_t> TokenValue;
-
 		class Token {
 		public:
 			Token(TokenType type, TokenValue value);
 			Token(TokenType type);
 			Token();
 
-		public:
 			friend std::ostream& operator<<(std::ostream& os, const Token& token);
 
 		public:
@@ -157,6 +162,62 @@ namespace olc {
 			TokenValue m_value;
 		};
 
+		/*****************/
+		/* Class ASTNode */
+		/*****************/
+		class ASTNode {
+		protected:
+			ASTNode() = default;
+
+		public:
+			virtual int Interpret() = 0;
+		};
+
+		/**********************/
+		/* Class ASTBinOpNode */
+		/**********************/
+		class ASTBinOpNode : public ASTNode {
+		public:
+			ASTBinOpNode(ASTNodeSharedPtr leftNode, Token op, ASTNodeSharedPtr rightNode);
+
+		public:
+			int Interpret() override;
+
+		private:
+			ASTNodeSharedPtr m_leftNode;
+			ASTNodeSharedPtr m_rightNode;
+			Token m_op;
+		};
+
+		/************************/
+		/* Class ASTUnaryOpNode */
+		/************************/
+		class ASTUnaryOpNode : public ASTNode {
+		public:
+			ASTUnaryOpNode(Token op, ASTNodeSharedPtr node);
+
+		public:
+			int Interpret() override;
+
+		private:
+			ASTNodeSharedPtr m_node;
+			Token m_op;
+		};
+
+		/********************/
+		/* Class ASTNumNode */
+		/********************/
+		class ASTNumNode : public ASTNode {
+		public:
+			ASTNumNode(Token num);
+
+		public:
+			int Interpret() override;
+
+		private:
+			Token m_num;
+		};
+
 		/***************/
 		/* Class Error */
 		/***************/
@@ -167,7 +228,7 @@ namespace olc {
 		public:
 			friend std::ostream& operator<<(std::ostream& os, const Error& error);
 
-		private:
+		protected:
 			std::string m_sErrorName;
 			std::string m_sErrorDescription;
 		};
@@ -178,6 +239,14 @@ namespace olc {
 		class IllegalCharError : public Error {
 		public:
 			IllegalCharError(std::string sErrorDescription);
+		};
+
+		/******************************/
+		/* Class UnexpectedTokenError */
+		/******************************/
+		class UnexpectedTokenError : public Error {
+		public:
+			UnexpectedTokenError(std::vector<TokenType> expected, TokenType got);
 		};
 
 		/***************/
@@ -198,6 +267,26 @@ namespace olc {
 			char m_cCurrentChar;
 			std::istringstream m_isScript;
 		};
+
+		/****************/
+		/* Class Parser */
+		/****************/
+		class Parser {
+		public:
+			Parser(Lexer& lexer);
+		public:
+			ParserReturn Parse();
+
+		private:
+			ParserReturn Expr();
+			ParserReturn Term();
+			ParserReturn Factor();
+			std::optional<Error> Eat(TokenType type);
+
+		private:
+			Lexer& m_lexer;
+			Token m_currentToken;
+		};
 	}
 }
 #pragma endregion
@@ -214,40 +303,98 @@ namespace olc {
 	/****************/
 	/* Class Script */
 	/****************/
-#pragma region pgex_script_impl_class
 
-	bool Script::LoadScript(std::string sScript) {
+	bool ScriptEngine::LoadScript(std::string sScript) {
 		script::Lexer lexer(sScript);
-
 		std::cout << "Loaded Script: " << sScript << std::endl;
 
-		script::Token token;
+		script::Parser parser(lexer);
+		script::ParserReturn ret = parser.Parse();
+		if (std::holds_alternative<script::Error>(ret)) {
+			std::cout << "Error parsing script: " << std::get<script::Error>(ret) << std::endl;
+			return false;
+		}
 
-		do {
-			script::LexerReturn ret = lexer.GetNextToken();
+		script::ASTNodeSharedPtr node = std::get<script::ASTNodeSharedPtr>(ret);
+		int result = node->Interpret();
 
-			if (std::holds_alternative<script::Error>(ret)) {
-				script::Error err = std::get<script::Error>(ret);
-				std::cout << "Error: " << err << std::endl;
-				break;
-			}
-
-			token = std::get<script::Token>(ret);
-
-			std::cout << "Current Token: " << token << std::endl;
-		} while (token.GetTokenType() != script::TokenType::TT_EOF);
-
+		std::cout << "Result: " << result << std::endl;
+		
 		return true;
 	}
 
-#pragma endregion
-
 	namespace script {
+		/**********************/
+		/* Class ASTBinOpNode */
+		/**********************/
+		ASTBinOpNode::ASTBinOpNode(ASTNodeSharedPtr leftNode, Token op, ASTNodeSharedPtr rightNode)
+			: m_leftNode(leftNode), m_op(op), m_rightNode(rightNode)
+		{ }
+
+		int ASTBinOpNode::Interpret()
+		{
+			switch (m_op.GetTokenType())
+			{
+			case TokenType::TT_PLUS:
+				return m_leftNode->Interpret() + m_rightNode->Interpret();
+
+			case TokenType::TT_MINUS:
+				return m_leftNode->Interpret() - m_rightNode->Interpret();
+
+			case TokenType::TT_MULTIPLY:
+				return m_leftNode->Interpret() * m_rightNode->Interpret();
+
+			case TokenType::TT_DIVIDE:
+				return m_leftNode->Interpret() / m_rightNode->Interpret();
+
+			default:
+				return 0;
+			}
+		}
+
+		/************************/
+		/* Class ASTUnaryOpNode */
+		/************************/
+		ASTUnaryOpNode::ASTUnaryOpNode(Token op, ASTNodeSharedPtr node)
+			: m_node(node), m_op(op)
+		{ }
+
+		int ASTUnaryOpNode::Interpret()
+		{
+			switch (m_op.GetTokenType())
+			{
+			case TokenType::TT_PLUS:
+				return +m_node->Interpret();
+
+			case TokenType::TT_MINUS:
+				return -m_node->Interpret();
+
+			default:
+				return 0;
+			}
+		}
+
+		/********************/
+		/* Class ASTNumNode */
+		/********************/
+		ASTNumNode::ASTNumNode(Token numToken)
+			: m_num(numToken)
+		{ }
+
+		int ASTNumNode::Interpret()
+		{
+			TokenValue num = m_num.GetValue();
+			if (std::holds_alternative<int32_t>(num))
+				return std::get<int32_t>(num);
+
+			// @TOOD: Fire error
+			return 0;
+		}
+
+
 		/***************/
 		/* Class Token */
 		/***************/
-#pragma region pgex_script_impl_token
-
 		Token::Token(TokenType type, TokenValue value) :
 			m_type(type), m_value(value)
 		{ }
@@ -257,7 +404,7 @@ namespace olc {
 		{ }
 
 		Token::Token() :
-			Token(TokenType::TT_EOF)
+			Token(TokenType::TT_NONE)
 		{ }
 
 		TokenType Token::GetTokenType()
@@ -316,15 +463,15 @@ namespace olc {
 				os << "NUMBER";
 				break;
 
+			case TokenType::TT_NONE:
+				os << "NONE";
+				break;
+
 			default:
 				os << "UNKNOWN";
 			}
 
-			if (std::holds_alternative<std::string>(token.m_value)) {
-				std::string sValue = std::get<std::string>(token.m_value);
-				os << ", \"" << sValue << "\"";
-			}
-			else if (std::holds_alternative<int32_t>(token.m_value)) {
+			if (std::holds_alternative<int32_t>(token.m_value)) {
 				int32_t nValue = std::get<int32_t>(token.m_value);
 				os << ", " << nValue;
 			}
@@ -333,13 +480,9 @@ namespace olc {
 			return os;
 		}
 
-#pragma endregion
-
 		/***************/
 		/* Class Error */
 		/***************/
-#pragma region pgex_script_impl_error
-
 		Error::Error(std::string sErrorName, std::string sErrorDescription) :
 			m_sErrorName(sErrorName), m_sErrorDescription(sErrorDescription)
 		{ }
@@ -350,24 +493,38 @@ namespace olc {
 			return os;
 		}
 
-#pragma endregion
-
 		/**************************/
 		/* Class IllegalCharError */
 		/**************************/
-#pragma region pgex_script_impl_illegalcharerror
-
 		IllegalCharError::IllegalCharError(std::string sErrorDescription) :
 			Error("IllegalCharError", sErrorDescription)
 		{ }
 
-#pragma endregion
+		/******************************/
+		/* Class UnexpectedTokenError */
+		/******************************/
+		UnexpectedTokenError::UnexpectedTokenError(std::vector<TokenType> vExpected, TokenType got) :
+			Error("UnexpectedTokenError", "")
+		{ 
+			std::ostringstream ossDetail;
+
+			ossDetail << "Expected token ";
+			for (auto& expected : vExpected) {
+				ossDetail << expected;
+
+				if (&expected != &vExpected.back()) {
+					ossDetail << ", ";
+				}
+			}
+
+			ossDetail << " but got " << got << " instead";
+
+			m_sErrorDescription = ossDetail.str();
+		}
 
 		/***************/
 		/* Class Lexer */
 		/***************/
-#pragma region pgex_script_impl_lexer
-
 		Lexer::Lexer(std::string sScript) :
 			m_isScript(sScript)
 		{ 
@@ -388,7 +545,7 @@ namespace olc {
 			static const std::string digits("123456789");
 			Token token;
 
-			while (m_cCurrentChar != '\0' && token.GetTokenType() == TokenType::TT_EOF) {
+			while (m_cCurrentChar != '\0' && token.GetTokenType() == TokenType::TT_NONE) {
 				if (m_cCurrentChar == '\t' || m_cCurrentChar == ' ') {
 					// Ignore whitespaces
 					Advance();
@@ -418,14 +575,18 @@ namespace olc {
 				}
 				else {
 					// Illegal character found!
-					IllegalCharError error("'" + std::string(1, m_cCurrentChar) + "'");
-					return LexerReturn(error);
+					return IllegalCharError("'" + std::string(1, m_cCurrentChar) + "'");
 				}
 
 				Advance();
 			}
 
-			return LexerReturn(token);
+			if (m_cCurrentChar == '\0' && token.GetTokenType() == TokenType::TT_NONE) {
+				// End of script reached
+				token.SetTokenType(TokenType::TT_EOF);
+			}
+
+			return token;
 		}
 
 		LexerReturn Lexer::GenerateNumberToken()
@@ -444,12 +605,152 @@ namespace olc {
 			}
 
 			int32_t nNumberValue = std::stoi(sNumber);
-			Token numberToken(TokenType::TT_NUMBER, nNumberValue);
-
-			return LexerReturn(numberToken);
+			return Token(TokenType::TT_NUMBER, nNumberValue);
 		}
 
-#pragma endregion
+		/****************/
+		/* Class Parser */
+		/****************/
+		Parser::Parser(Lexer& lexer)
+			: m_lexer(lexer)
+		{ }
+
+		std::optional<Error> Parser::Eat(TokenType type)
+		{
+			if (m_currentToken.GetTokenType() == type) {
+				LexerReturn ret = m_lexer.GetNextToken();
+				if (std::holds_alternative<Error>(ret))
+					return std::get<Error>(ret);
+
+				m_currentToken = std::get<Token>(ret);
+				return std::nullopt;
+			}
+			else {
+				return UnexpectedTokenError({ type }, m_currentToken.GetTokenType());
+			}
+		}
+
+		ParserReturn Parser::Parse()
+		{
+			// Current token is firstly set to TT_NONE
+			std::optional<Error> error = Eat(TokenType::TT_NONE);
+			if (error)
+				return *error;
+
+			ParserReturn ret = Expr();
+			if (std::holds_alternative<Error>(ret))
+				return std::get<Error>(ret);
+
+			error = Eat(TokenType::TT_EOF);
+			if (error)
+				return *error;
+
+			return ret;
+		}
+
+		ParserReturn Parser::Factor()
+		{
+			Token token = m_currentToken;
+			TokenType curTokenType = token.GetTokenType();
+			std::optional<Error> error;
+			ParserReturn ret;
+
+			switch (curTokenType)
+			{
+			case TokenType::TT_PLUS:
+			case TokenType::TT_MINUS:
+				error = Eat(curTokenType);
+				if (error)
+					return *error;
+
+				ret = Factor();
+				if (std::holds_alternative<Error>(ret))
+					return std::get<Error>(ret);
+
+				return std::make_shared<ASTUnaryOpNode>(token, std::get<ASTNodeSharedPtr>(ret));
+
+			case TokenType::TT_NUMBER:
+				error = Eat(curTokenType);
+				if (error)
+					return *error;
+
+				return std::make_shared<ASTNumNode>(token);
+
+			case TokenType::TT_LPAREN:
+				error = Eat(TokenType::TT_LPAREN);
+				if (error)
+					return *error;
+
+				ret = Expr();
+				if (std::holds_alternative<Error>(ret))
+					return std::get<Error>(ret);
+
+				error = Eat(TokenType::TT_RPAREN);
+				if (error)
+					return *error;
+
+				return std::get<ASTNodeSharedPtr>(ret);
+
+			default:
+				return UnexpectedTokenError({ TokenType::TT_LPAREN, TokenType::TT_NUMBER }, token.GetTokenType());
+			}
+		}
+
+		ParserReturn Parser::Term()
+		{
+			std::optional<Error> error;
+
+			ParserReturn ret = Factor();
+			if (std::holds_alternative<Error>(ret))
+				return std::get<Error>(ret);
+
+			ASTNodeSharedPtr node = std::get<ASTNodeSharedPtr>(ret);
+
+			while (m_currentToken.GetTokenType() == TokenType::TT_MULTIPLY || m_currentToken.GetTokenType() == TokenType::TT_DIVIDE) {
+				Token op = m_currentToken;
+				error = Eat(op.GetTokenType());
+
+				if (error)
+					return *error;
+
+				ret = Factor();
+				if (std::holds_alternative<Error>(ret))
+					return std::get<Error>(ret);
+
+				ASTNodeSharedPtr rightNode = std::get<ASTNodeSharedPtr>(ret);
+				node = std::make_shared<ASTBinOpNode>(node, op, rightNode);
+			}
+
+			return node;
+		}
+
+		ParserReturn Parser::Expr()
+		{
+			std::optional<Error> error;
+
+			ParserReturn ret = Term();
+			if (std::holds_alternative<Error>(ret))
+				return std::get<Error>(ret);
+
+			ASTNodeSharedPtr node = std::get<ASTNodeSharedPtr>(ret);
+
+			while (m_currentToken.GetTokenType() == TokenType::TT_PLUS || m_currentToken.GetTokenType() == TokenType::TT_MINUS) {
+				Token op = m_currentToken;
+
+				error = Eat(op.GetTokenType());
+				if (error)
+					return *error;
+
+				ret = Term();
+				if (std::holds_alternative<Error>(ret))
+					return std::get<Error>(ret);
+
+				ASTNodeSharedPtr rightNode = std::get<ASTNodeSharedPtr>(ret);
+				node = std::make_shared<ASTBinOpNode>(node, op, rightNode);
+			}
+
+			return node;
+		}
 	}
 }
 
